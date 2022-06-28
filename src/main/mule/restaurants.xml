@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd 
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+    <http:listener-config name="restaurants-httpListenerConfig">
+        <http:listener-connection host="0.0.0.0" port="${http.receiver.port}" />
+    </http:listener-config>
+    <apikit:config name="restaurants-config" raml="restaurants.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
+    <http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" doc:id="66ee5259-4044-4a01-a9de-4741bdb8ff4d" >
+		<http:request-connection protocol="HTTPS" host="${http.geocoding.api.host}" connectionIdleTimeout="${http.geocoding.api.timeout}" />
+	</http:request-config>
+	<configuration-properties doc:name="Configuration properties" doc:id="dbeb9203-d284-4276-9a5e-e68d136f31ab" file="local_env.properties" />
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="bbea1fcb-7202-4f36-966f-6f7a0a4607ae" >
+		<db:my-sql-connection host="${database.server}" port="${database.port}" user="${database.username}" password="${database.password}" database="${database.username}" />
+	</db:config>
+	<flow name="restaurants-main">
+        <http:listener config-ref="restaurants-httpListenerConfig" path="${http.receiver.basepath}">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body><![CDATA[#[payload]]]></http:body>
+            </http:error-response>
+        </http:listener>
+        <logger level="INFO" doc:name="Logger" doc:id="799ff6eb-7330-422d-b2ff-c0966c5c72fb" />
+		<apikit:router config-ref="restaurants-config" />
+        <error-handler>
+            <on-error-propagate type="APIKIT:BAD_REQUEST" enableNotifications="true" logException="true">
+                <choice doc:name="Choice" doc:id="6b6a2101-776f-4f20-9dd4-da73c27c335a" >
+					<when doc:id="2ed1c978-feab-4959-b0a9-e50a6b5d9f62" expression="#[attributes.queryParams.address==null and attributes.queryParams.radius==null]">
+						<set-payload value="#[%dw 2.0
+output application/json
+---
+{message: &quot;Bad request: Query parameters 'address' and 'radius' are missing&quot;}]" doc:name="Set Payload" doc:id="61b37df0-0cd3-40a8-bb07-873e15bc1d34" />
+					</when>
+					<when doc:id="0584e7c1-64a8-4bbb-90f0-26e64e5633a1" expression="#[attributes.queryParams.address==null]">
+						<set-payload value="#[%dw 2.0
+output application/json
+---
+{message: &quot;Bad request: Query parameters 'address' is missing&quot;}]" doc:name="Set Payload" doc:id="da4caba4-dd37-409d-b3e5-0b3554281993" />
+					</when>
+					<otherwise >
+						<set-payload value="#[%dw 2.0
+output application/json
+---
+{message: &quot;Bad request: Query parameters'radius' is missing&quot;}]" doc:name="Set Payload" doc:id="712ee88e-a5c7-403c-8650-ec3c490d2ada" />
+					</otherwise>
+				</choice>
+				<ee:transform xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd" doc:id="c03bd5a2-c354-4400-8eaa-8080e0253f6b">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[payload]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus"><![CDATA[400]]></ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:NOT_FOUND" enableNotifications="true" logException="true">
+                <ee:transform xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd" doc:id="141bdda9-95b7-4bc8-a7ee-439c6ac3b900">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Resource not found"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus"><![CDATA[404]]></ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:METHOD_NOT_ALLOWED">
+                <ee:transform xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Method not allowed"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">405</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:NOT_ACCEPTABLE" enableNotifications="true" logException="true">
+                <ee:transform xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Not acceptable"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">406</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:UNSUPPORTED_MEDIA_TYPE" enableNotifications="true" logException="true">
+                <ee:transform xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Unsupported media type"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">415</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:NOT_IMPLEMENTED" enableNotifications="true" logException="true">
+                <ee:transform xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Not Implemented"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">501</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+    <flow name="restaurants-console">
+        <http:listener config-ref="restaurants-httpListenerConfig" path="${http.receiver.consolepath}">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body><![CDATA[#[payload]]]></http:body>
+            </http:error-response>
+        </http:listener>
+        <apikit:console config-ref="restaurants-config" />
+        <error-handler>
+            <on-error-propagate type="APIKIT:NOT_FOUND">
+                <ee:transform xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Resource not found"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">404</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+    <flow name="get:\restaurants:restaurants-config">
+		<set-variable value="#[%dw 2.0
+output application/java
+---
+attributes.queryParams.radius as String]" doc:name="Set Radius" doc:id="1a358e42-53b2-4789-b352-12839b559449" variableName="radius" />
+		<try doc:name="Try" doc:id="00068855-6a35-443f-a50c-ae192eba7258" >
+			<http:request method="GET" doc:name="Get GeoCodes" doc:id="a9f9cbd5-1482-4bb3-923d-43607ea07a50" config-ref="HTTP_Request_configuration" path="${http.geocoding.api.path}">
+			<http:query-params><![CDATA[#[output application/java
+---
+{
+	"address" : attributes.queryParams.address,
+	"key" : "AIzaSyBv2ZgVoqgOOLrJ5po2QMxnAIXAtMQ-Nlo"
+}]]]></http:query-params>
+		</http:request>
+			<error-handler >
+				<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="e50c6d69-238b-4ad4-8cd3-679f634bd2ab" >
+					<logger level="ERROR" doc:name="Logger" doc:id="1a9f9c0d-ffed-4703-bcd2-77a88469b378" message='{" Exception occurred in GEOCODING API invocation"}'/>
+				</on-error-propagate>
+			</error-handler>
+		</try>
+		<logger level="INFO" doc:name="Log GoogleAPI Response" doc:id="895634bc-0c86-45e1-bc97-0e587fd99360" />
+		<try doc:name="Try" doc:id="e11953e1-b945-465a-a81b-2d5fde3b7a60" >
+			<db:select doc:name="Query Restaurants" doc:id="f3496e03-30a2-459d-9b21-638dfb546b64" config-ref="Database_Config" queryTimeout="${database.querytimeout}" maxRows="${database.maxrows}">
+			<db:sql>select id,name,type AS facilityType,address AS streetAddress,city,state,zip,
+		round((ST_Distance_Sphere( point(longitude, latitude),point(:longitude, :latitude)) * .000621371192),2)  AS distance 
+from Restaurants
+where
+ST_Distance_Sphere( point(longitude, latitude),point(:longitude, :latitude)) * .000621371192 &lt; :radius order by distance</db:sql>
+			<db:input-parameters><![CDATA[#[%dw 2.0
+output application/java
+---
+{
+	latitude: payload.results[0].geometry.location.lat,
+	radius: vars.radius as String,
+	longitude: payload.results[0].geometry.location.lng
+}]]]></db:input-parameters>
+		</db:select>
+			<error-handler >
+				<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="24a838f9-341f-48f3-9f96-360541253c5b" >
+					<logger level="ERROR" doc:name="Logger" doc:id="9804fbb6-d948-4b32-bcc2-c9891626ac7f" message='{"Database Exception Occurred"}'/>
+				</on-error-propagate>
+			</error-handler>
+		</try>
+		<logger level="INFO" doc:name="Log Query Result" doc:id="d4e40e9f-88df-4499-b20f-1ca0383b37a3" />
+		<try doc:name="Try" doc:id="0ad854c1-252f-4d82-ba26-819f6f084434" >
+			<choice doc:name="Choice" doc:id="e23c0ef7-fbd9-4166-98df-d10d00279003">
+			<when doc:id="eed88f39-1323-4edd-9c5a-a1d2a1ec5681" expression="#[%dw 2.0
+output application/java
+---
+payload.name==null]">
+				<raise-error doc:name="Raise error" doc:id="809403e6-fe18-4086-a6fa-a60daf9cec89" type="RESTAURANTS:NOT_FOUND" description='{"No restaurants found within this address range. Check the address or increase the radius"}' />
+			</when>
+			<otherwise>
+				<set-payload value="#[payload]" doc:name="Set Payload" doc:id="d54a95e2-f41c-40ff-bc06-10df94a1a158" />
+			</otherwise>
+		</choice>
+			<ee:transform xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd" doc:id="e4696686-4d53-400f-a78e-2db5bee8e9bc">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload map ( payload01 , indexOfPayload01 ) -> {
+	id: payload01.id,
+	name: payload01.name,
+	facilityType: payload01.facilityType,
+	address: {
+		zip: payload01.zip,
+		streetAddress: payload01.streetAddress,
+		city: payload01.city,
+		state: payload01.state
+	},
+	distance: payload01.distance as String {format: ".##"} default ""
+	
+	
+	
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+			<error-handler>
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="db0db206-cdaf-4780-9fb6-07b0b7176d6b" >
+					<ee:transform doc:name="Transform Message" doc:id="2eebd59f-3839-4d8c-a7a5-b22eb7017e4a" >
+						<ee:message >
+							<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{Exception :"No restaurants found within this address range. Check the address or increase the radius"}]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+				</on-error-continue>
+			</error-handler>
+		</try>
+		<error-handler>
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="4a8be378-c475-4d6b-a27f-addb202b1c3a" >
+				<ee:transform doc:name="Transform Message" doc:id="622ae79e-8031-43a3-ba62-0008f0c6c78c" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{Exception : "System Exception Occurred"}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</on-error-continue>
+		</error-handler>
+    </flow>
+</mule>

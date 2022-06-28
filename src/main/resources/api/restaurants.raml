@@ -1,0 +1,64 @@
+#%RAML 1.0
+title: Restaurants
+version: v1.0
+
+securitySchemes:
+  basic:
+    description: |
+      This API supports Basic Authentication.
+    type: Basic Authentication
+          
+
+securedBy: [basic]
+
+types:
+  restaurant:
+    properties:
+      id : string
+      name: string
+      facilityType?: string
+      address: address
+      distance: string
+  
+  address:
+    properties:
+      streetAddress: string
+      city: string
+      state: string
+      zip: string
+      
+
+/restaurants:
+      get:
+        queryParameters:
+           address: string
+           radius : number
+        responses: 
+          200:
+            body:
+              application/json:
+                type: restaurant[]
+                example: |
+                 [
+                    {
+                      "id": "235432",
+                      "name": "Nancy Pizza",
+                      "facilityType": "Restaurant & Bar",
+                      "address": {
+                          "streetAddress": "800 N KEDZIE AVE",
+                          "city": "CHICAGO",
+                          "state": "IL",
+                          "zip": "60651"
+                        },
+                      "distance": "2.5"    
+                    }	
+                 ]
+          404:
+            body: 
+              application/json:
+                properties:
+                  message: string
+                example: |
+                  {
+                    "message" : "No restaurant found . Try increasing radius"
+                  }
